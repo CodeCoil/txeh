@@ -10,6 +10,8 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"strconv"
+	"math"
 )
 
 const UNKNOWN = 0
@@ -300,13 +302,37 @@ func (h *Hosts) AddHost(addressRaw string, hostRaw string) {
 		}
 	}
 
+	maxHostsPerLine := math.MaxInt32
+
+	if runtime.GOOS == "windows" {
+		// Windows only support a maximum 10 hostnames 
+		// for a single line.
+		maxHostsPerLine = 10
+	}
+
+	// Check of user overrides via KUBEFWD_MAX_HOSTNAMES_PER_LINE
+	if value, exists := os.LookupEnv("KUBEFWD_MAX_HOSTNAMES_PER_LINE"); exists {
+		// Environment variable exists, now try to parse it as an integer
+		intValue, err := strconv.Atoi(value)
+		if err == nil {
+			maxHostsPerLine = intValue
+		}
+	}
+
 	// if the address exists add it to the address line
 	for i, hfl := range h.hostFileLines {
 		if hfl.Address == address {
+			added := false
 			h.Lock()
-			h.hostFileLines[i].Hostnames = append(h.hostFileLines[i].Hostnames, host)
+			// Check if the length of the array is less than maxHostsPerLine
+			if len(h.hostFileLines[i].Hostnames) < maxHostsPerLine {
+				h.hostFileLines[i].Hostnames = append(h.hostFileLines[i].Hostnames, host)
+				added = true
+			}
 			h.Unlock()
-			return
+			if added {
+				return
+			}
 		}
 	}
 
